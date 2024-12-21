@@ -1,18 +1,15 @@
 package ru.kata.spring.boot_security.demo.controller;
 
-
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import ru.kata.spring.boot_security.demo.models.Role;
 import ru.kata.spring.boot_security.demo.models.User;
-import ru.kata.spring.boot_security.demo.repo.RoleRepo;
-import ru.kata.spring.boot_security.demo.repo.UserRepo;
+import ru.kata.spring.boot_security.demo.service.RoleService;
+import ru.kata.spring.boot_security.demo.service.UserService;
 
 import java.security.Principal;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -22,77 +19,82 @@ import java.util.Set;
 public class AdminController {
 
     @Autowired
-    private RoleRepo roleRepo;
+    private UserService userService;
 
     @Autowired
-    private UserRepo userRepo;
-
-    @Autowired
-    private PasswordEncoder passwordEncoder;
+    private RoleService roleService;
 
     @GetMapping
     public String adminHomeAndAllUsers(Model model, Principal principal) {
-        model.addAttribute("users", userRepo.findAll());
+        model.addAttribute("users", userService.findAll());
         model.addAttribute("principal", principal);
-        model.addAttribute("userPrincipal", userRepo.findByUsername(principal.getName()));
+        model.addAttribute("userPrincipal", userService.findByUsername(principal.getName()));
         return "users";
     }
 
     @PostMapping
     public String adminHomePost(@RequestParam("id") Long id, @RequestParam("action") String action) {
-        User user = userRepo.findById(id).get();
-        if (action.equals("delete")) {
-            userRepo.delete(user);
-        } else if (action.equals("edit")) {
-            return "redirect:/admin/update?id=" + user.getId();
+        User user = userService.findById(id);
+        if (user != null) {
+            if (action.equals("delete")) {
+                userService.delete(user);
+            } else if (action.equals("edit")) {
+                return "redirect:/admin/update?id=" + user.getId();
+            }
         }
         return "redirect:/admin";
     }
 
-
     @GetMapping("/create")
     public String createUserForm(Model model) {
         model.addAttribute("user", new User());
-        model.addAttribute("allRoles", roleRepo.findAll());
+        model.addAttribute("allRoles", roleService.findAll());
         return "create";
     }
 
     @PostMapping("/create")
     public String createUser(@ModelAttribute("user") User user, @RequestParam("authorities") List<String> roles) {
+        Set<Role> roleSet = new HashSet<>();
         if (roles.contains("ROLE_ADMIN")) {
-            user.setRoles(new HashSet<>(roleRepo.findAll()));
+            roleSet.addAll(roleService.findAll());
         } else {
-            Set<Role> roleSet = new HashSet<>(roleRepo.getRolesByName("ROLE_USER"));
-            user.setRoles(roleSet);
+            roleSet.add(roleService.findByName("ROLE_USER"));
         }
-        user.setPassword(passwordEncoder.encode(user.getPassword()));
-        userRepo.save(user);
+        user.setRoles(roleSet);
+        userService.save(user);
         return "redirect:/admin";
     }
 
     @GetMapping("/update")
     public String edit(Model model, @RequestParam("id") Long id) {
-        User user = userRepo.findById(id).get();
-        model.addAttribute("user", user);
-        model.addAttribute("userRole", user.getAuthorities());
-        model.addAttribute("isAdmin", user.getAuthorities().contains("ROLE_ADMIN"));
+        User user = userService.findById(id);
+        if (user != null) {
+            model.addAttribute("user", user);
+            model.addAttribute("userRole", user.getAuthorities());
+            model.addAttribute("isAdmin", user.getAuthorities().contains("ROLE_ADMIN"));
+        }
         return "update";
     }
 
     @PostMapping("/update")
     public String update(@ModelAttribute("user") User user, @RequestParam("id") Long id, @RequestParam("role") List<String> roles) {
-        User updatedUser = userRepo.findById(id).stream()
-                .peek(up -> {
-                    up.setUsername(user.getUsername());
-                    up.setPassword(passwordEncoder.encode(user.getPassword()));
-                    up.setEmail(user.getEmail());
-                    if (roles.contains("ROLE_ADMIN")) {
-                        up.setRoles(new HashSet<>(roleRepo.findAll()));
-                    } else {
-                        up.setRoles(new HashSet<>(Collections.singleton(roleRepo.findByName("ROLE_USER"))));
-                    }
-                }).findFirst().get();
-        userRepo.save(updatedUser);
+        User updatedUser = userService.findById(id);
+        if (updatedUser != null) {
+            updatedUser.setUsername(user.getUsername());
+            updatedUser.setPassword(user.getPassword());
+            updatedUser.setEmail(user.getEmail());
+
+            Set<Role> roleSet = new HashSet<>();
+            if (roles.contains("ROLE_ADMIN")) {
+                roleSet.addAll(roleService.findAll());
+            } else {
+                roleSet.add(roleService.findByName("ROLE_USER"));
+            }
+            updatedUser.setRoles(roleSet);
+
+            userService.update(updatedUser);
+        }
         return "redirect:/admin";
     }
 }
+
